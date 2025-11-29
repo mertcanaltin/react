@@ -36,6 +36,7 @@ export function Timeline(_: {}): React.Node {
   const {
     file,
     inMemoryTimelineData,
+    isPerformanceTracksSupported,
     isTimelineSupported,
     setFile,
     viewState,
@@ -100,7 +101,11 @@ export function Timeline(_: {}): React.Node {
   } else if (isTimelineSupported) {
     content = <NoProfilingData />;
   } else {
-    content = <TimelineNotSupported />;
+    content = (
+      <TimelineNotSupported
+        isPerformanceTracksSupported={isPerformanceTracksSupported}
+      />
+    );
   }
 
   return (
@@ -117,6 +122,7 @@ const ProcessingData = () => (
   </div>
 );
 
+// $FlowFixMe[missing-local-annot]
 const CouldNotLoadProfile = ({error, onFileSelect}) => (
   <div className={styles.EmptyStateContainer}>
     <div className={styles.Header}>Could not load profile</div>

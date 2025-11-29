@@ -9,30 +9,15 @@
 
 import {__DEBUG__} from 'react-devtools-shared/src/constants';
 
-import type {Thenable, Wakeable} from 'shared/ReactTypes';
+import type {
+  Thenable,
+  FulfilledThenable,
+  RejectedThenable,
+} from 'shared/ReactTypes';
+
+import * as React from 'react';
 
 const TIMEOUT = 30000;
-
-const Pending = 0;
-const Resolved = 1;
-const Rejected = 2;
-
-type PendingRecord = {
-  status: 0,
-  value: Wakeable,
-};
-
-type ResolvedRecord<T> = {
-  status: 1,
-  value: T,
-};
-
-type RejectedRecord = {
-  status: 2,
-  value: null,
-};
-
-type Record<T> = PendingRecord | ResolvedRecord<T> | RejectedRecord;
 
 type Module = any;
 type ModuleLoaderFunction = () => Thenable<Module>;
@@ -40,20 +25,26 @@ type ModuleLoaderFunction = () => Thenable<Module>;
 // This is intentionally a module-level Map, rather than a React-managed one.
 // Otherwise, refreshing the inspected element cache would also clear this cache.
 // Modules are static anyway.
-const moduleLoaderFunctionToModuleMap: Map<
-  ModuleLoaderFunction,
-  Module,
-> = new Map();
-
-function readRecord<T>(record: Record<T>): ResolvedRecord<T> | RejectedRecord {
-  if (record.status === Resolved) {
-    // This is just a type refinement.
-    return record;
-  } else if (record.status === Rejected) {
-    // This is just a type refinement.
-    return record;
+const moduleLoaderFunctionToModuleMap: Map<ModuleLoaderFunction, Module> =
+  new Map();
+function readRecord<T>(record: Thenable<T>): T | null {
+  if (typeof React.use === 'function') {
+    try {
+      // eslint-disable-next-line react-hooks-published/rules-of-hooks
+      return React.use(record);
+    } catch (x) {
+      if (x === null) {
+        return null;
+      }
+      throw x;
+    }
+  }
+  if (record.status === 'fulfilled') {
+    return record.value;
+  } else if (record.status === 'rejected') {
+    return null;
   } else {
-    throw record.value;
+    throw record;
   }
 }
 
@@ -68,10 +59,15 @@ export function loadModule(moduleLoaderFunction: ModuleLoaderFunction): Module {
   }
 
   if (!record) {
-    const callbacks = new Set();
-    const wakeable: Wakeable = {
-      then(callback) {
+    const callbacks = new Set<(value: any) => mixed>();
+    const rejectCallbacks = new Set<(reason: mixed) => mixed>();
+    const thenable: Thenable<Module> = {
+      status: 'pending',
+      value: null,
+      reason: null,
+      then(callback: (value: any) => mixed, reject: (error: mixed) => mixed) {
         callbacks.add(callback);
+        rejectCallbacks.add(reject);
       },
 
       // Optional property used by Timeline:
@@ -87,12 +83,21 @@ export function loadModule(moduleLoaderFunction: ModuleLoaderFunction): Module {
       // This assumes they won't throw.
       callbacks.forEach(callback => callback());
       callbacks.clear();
+      rejectCallbacks.clear();
+    };
+    const wakeRejections = () => {
+      if (timeoutID) {
+        clearTimeout(timeoutID);
+        timeoutID = null;
+      }
+
+      // This assumes they won't throw.
+      rejectCallbacks.forEach(callback => callback((thenable: any).reason));
+      rejectCallbacks.clear();
+      callbacks.clear();
     };
 
-    const newRecord: Record<Module> = (record = {
-      status: Pending,
-      value: wakeable,
-    });
+    record = thenable;
 
     let didTimeout = false;
 
@@ -108,9 +113,9 @@ export function loadModule(moduleLoaderFunction: ModuleLoaderFunction): Module {
           return;
         }
 
-        const resolvedRecord = ((newRecord: any): ResolvedRecord<Module>);
-        resolvedRecord.status = Resolved;
-        resolvedRecord.value = module;
+        const fulfilledThenable: FulfilledThenable<Module> = (thenable: any);
+        fulfilledThenable.status = 'fulfilled';
+        fulfilledThenable.value = module;
 
         wake();
       },
@@ -127,11 +132,11 @@ export function loadModule(moduleLoaderFunction: ModuleLoaderFunction): Module {
 
         console.log(error);
 
-        const thrownRecord = ((newRecord: any): RejectedRecord);
-        thrownRecord.status = Rejected;
-        thrownRecord.value = null;
+        const rejectedThenable: RejectedThenable<Module> = (thenable: any);
+        rejectedThenable.status = 'rejected';
+        rejectedThenable.reason = error;
 
-        wake();
+        wakeRejections();
       },
     );
 
@@ -147,16 +152,17 @@ export function loadModule(moduleLoaderFunction: ModuleLoaderFunction): Module {
 
       didTimeout = true;
 
-      const timedoutRecord = ((newRecord: any): RejectedRecord);
-      timedoutRecord.status = Rejected;
-      timedoutRecord.value = null;
+      const rejectedThenable: RejectedThenable<Module> = (thenable: any);
+      rejectedThenable.status = 'rejected';
+      rejectedThenable.reason = null;
 
-      wake();
+      wakeRejections();
     }, TIMEOUT);
 
     moduleLoaderFunctionToModuleMap.set(moduleLoaderFunction, record);
   }
 
-  const response = readRecord(record).value;
+  // $FlowFixMe[underconstrained-implicit-instantiation]
+  const response = readRecord(record);
   return response;
 }

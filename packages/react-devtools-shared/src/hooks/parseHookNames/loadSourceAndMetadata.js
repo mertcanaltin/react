@@ -46,7 +46,7 @@
 //       and there is no need to convert runtime code to the original source.
 
 import {__DEBUG__} from 'react-devtools-shared/src/constants';
-import {getHookSourceLocationKey} from 'react-devtools-shared/src/hookNamesCache';
+import {getHookSourceLocationKey} from 'react-devtools-shared/src/hookSourceLocation';
 import {sourceMapIncludesSource} from '../SourceMapUtils';
 import {
   withAsyncPerfMeasurements,
@@ -64,7 +64,7 @@ import type {FetchFileWithCaching} from 'react-devtools-shared/src/devtools/view
 
 // Prefer a cached albeit stale response to reduce download time.
 // We wouldn't want to load/parse a newer version of the source (even if one existed).
-const FETCH_OPTIONS = {cache: 'force-cache'};
+const FETCH_OPTIONS = {cache: 'force-cache' as CacheType};
 
 const MAX_SOURCE_LENGTH = 100_000_000;
 
@@ -119,24 +119,14 @@ export async function loadSourceAndMetadata(
 }
 
 function decodeBase64String(encoded: string): Object {
-  if (typeof atob === 'function') {
-    return atob(encoded);
-  } else if (
-    typeof Buffer !== 'undefined' &&
-    Buffer !== null &&
-    typeof Buffer.from === 'function'
-  ) {
-    return Buffer.from(encoded, 'base64');
-  } else {
-    throw Error('Cannot decode base64 string');
-  }
+  return atob(encoded);
 }
 
 function extractAndLoadSourceMapJSON(
   locationKeyToHookSourceAndMetadata: LocationKeyToHookSourceAndMetadata,
-): Promise<Array<$Call<<T>(p: Promise<T> | T) => T, Promise<void>>>> {
+): Promise<mixed> {
   // Deduplicate fetches, since there can be multiple location keys per source map.
-  const dedupedFetchPromises = new Map();
+  const dedupedFetchPromises = new Map<string, Promise<$FlowFixMe>>();
 
   if (__DEBUG__) {
     console.log(
@@ -149,7 +139,8 @@ function extractAndLoadSourceMapJSON(
   const setterPromises = [];
   locationKeyToHookSourceAndMetadata.forEach(hookSourceAndMetadata => {
     const sourceMapRegex = / ?sourceMappingURL=([^\s'"]+)/gm;
-    const runtimeSourceCode = ((hookSourceAndMetadata.runtimeSourceCode: any): string);
+    const runtimeSourceCode =
+      ((hookSourceAndMetadata.runtimeSourceCode: any): string);
 
     // TODO (named hooks) Search for our custom metadata first.
     // If it's found, we should use it rather than source maps.
@@ -314,7 +305,7 @@ function extractAndLoadSourceMapJSON(
 
 function fetchFile(
   url: string,
-  markName?: string = 'fetchFile',
+  markName: string = 'fetchFile',
 ): Promise<string> {
   return withCallbackPerfMeasurements(`${markName}("${url}")`, done => {
     return new Promise((resolve, reject) => {
@@ -415,7 +406,8 @@ function initializeHookSourceAndMetadata(
   hooksList: Array<HooksNode>,
 ): LocationKeyToHookSourceAndMetadata {
   // Create map of unique source locations (file names plus line and column numbers) to metadata about hooks.
-  const locationKeyToHookSourceAndMetadata: LocationKeyToHookSourceAndMetadata = new Map();
+  const locationKeyToHookSourceAndMetadata: LocationKeyToHookSourceAndMetadata =
+    new Map();
   for (let i = 0; i < hooksList.length; i++) {
     const hook = hooksList[i];
 
@@ -459,9 +451,9 @@ function isUnnamedBuiltInHook(hook: HooksNode) {
 function loadSourceFiles(
   locationKeyToHookSourceAndMetadata: LocationKeyToHookSourceAndMetadata,
   fetchFileWithCaching: FetchFileWithCaching | null,
-): Promise<Array<$Call<<T>(p: Promise<T> | T) => T, Promise<void>>>> {
+): Promise<mixed> {
   // Deduplicate fetches, since there can be multiple location keys per file.
-  const dedupedFetchPromises = new Map();
+  const dedupedFetchPromises = new Map<string, Promise<$FlowFixMe>>();
 
   const setterPromises = [];
   locationKeyToHookSourceAndMetadata.forEach(hookSourceAndMetadata => {
@@ -483,23 +475,25 @@ function loadSourceFiles(
 
     const fetchPromise =
       dedupedFetchPromises.get(runtimeSourceURL) ||
-      fetchFileFunction(runtimeSourceURL).then(runtimeSourceCode => {
-        // TODO (named hooks) Re-think this; the main case where it matters is when there's no source-maps,
-        // because then we need to parse the full source file as an AST.
-        if (runtimeSourceCode.length > MAX_SOURCE_LENGTH) {
-          throw Error('Source code too large to parse');
-        }
+      (runtimeSourceURL && !runtimeSourceURL.startsWith('<anonymous')
+        ? fetchFileFunction(runtimeSourceURL).then(runtimeSourceCode => {
+            // TODO (named hooks) Re-think this; the main case where it matters is when there's no source-maps,
+            // because then we need to parse the full source file as an AST.
+            if (runtimeSourceCode.length > MAX_SOURCE_LENGTH) {
+              throw Error('Source code too large to parse');
+            }
 
-        if (__DEBUG__) {
-          console.groupCollapsed(
-            `loadSourceFiles() runtimeSourceURL "${runtimeSourceURL}"`,
-          );
-          console.log(runtimeSourceCode);
-          console.groupEnd();
-        }
+            if (__DEBUG__) {
+              console.groupCollapsed(
+                `loadSourceFiles() runtimeSourceURL "${runtimeSourceURL}"`,
+              );
+              console.log(runtimeSourceCode);
+              console.groupEnd();
+            }
 
-        return runtimeSourceCode;
-      });
+            return runtimeSourceCode;
+          })
+        : Promise.reject(new Error('Empty url')));
     dedupedFetchPromises.set(runtimeSourceURL, fetchPromise);
 
     setterPromises.push(

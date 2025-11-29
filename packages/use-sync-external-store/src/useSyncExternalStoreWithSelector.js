@@ -23,13 +23,23 @@ export function useSyncExternalStoreWithSelector<Snapshot, Selection>(
   selector: (snapshot: Snapshot) => Selection,
   isEqual?: (a: Selection, b: Selection) => boolean,
 ): Selection {
+  type Inst =
+    | {
+        hasValue: true,
+        value: Selection,
+      }
+    | {
+        hasValue: false,
+        value: null,
+      };
+
   // Use this to track the rendered snapshot.
-  const instRef = useRef(null);
-  let inst;
+  const instRef = useRef<Inst | null>(null);
+  let inst: Inst;
   if (instRef.current === null) {
     inst = {
       hasValue: false,
-      value: (null: Selection | null),
+      value: null,
     };
     instRef.current = inst;
   } else {
@@ -44,7 +54,7 @@ export function useSyncExternalStoreWithSelector<Snapshot, Selection>(
     let hasMemo = false;
     let memoizedSnapshot;
     let memoizedSelection: Selection;
-    const memoizedSelector = nextSnapshot => {
+    const memoizedSelector = (nextSnapshot: Snapshot) => {
       if (!hasMemo) {
         // The first time the hook is called, there is no memoized result.
         hasMemo = true;
@@ -83,6 +93,9 @@ export function useSyncExternalStoreWithSelector<Snapshot, Selection>(
       // to React that the selections are conceptually equal, and we can bail
       // out of rendering.
       if (isEqual !== undefined && isEqual(prevSelection, nextSelection)) {
+        // The snapshot still has changed, so make sure to update to not keep
+        // old references alive
+        memoizedSnapshot = nextSnapshot;
         return prevSelection;
       }
 
@@ -108,7 +121,9 @@ export function useSyncExternalStoreWithSelector<Snapshot, Selection>(
   );
 
   useEffect(() => {
+    // $FlowFixMe[incompatible-type] changing the variant using mutation isn't supported
     inst.hasValue = true;
+    // $FlowFixMe[incompatible-type]
     inst.value = value;
   }, [value]);
 

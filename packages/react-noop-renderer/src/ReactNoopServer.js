@@ -30,6 +30,10 @@ type TextInstance = {
   hidden: boolean,
 };
 
+type ActivityInstance = {
+  children: Array<Instance | TextInstance | SuspenseInstance>,
+};
+
 type SuspenseInstance = {
   state: 'pending' | 'complete' | 'client-render',
   children: Array<Instance | TextInstance | SuspenseInstance>,
@@ -51,8 +55,10 @@ type Destination = {
   stack: Array<Segment | Instance | SuspenseInstance>,
 };
 
-type Resources = null;
-type BoundaryResources = null;
+type ResumableState = null;
+type RenderState = null;
+type HoistableState = null;
+type PreambleState = null;
 
 const POP = Buffer.from('/', 'utf8');
 
@@ -74,6 +80,9 @@ function write(destination: Destination, buffer: Uint8Array): void {
 }
 
 const ReactNoopServer = ReactFizzServer({
+  scheduleMicrotask(callback: () => void) {
+    callback();
+  },
   scheduleWork(callback: () => void) {
     callback();
   },
@@ -90,21 +99,29 @@ const ReactNoopServer = ReactFizzServer({
   closeWithError(destination: Destination, error: mixed): void {},
   flushBuffered(destination: Destination): void {},
 
-  UNINITIALIZED_SUSPENSE_BOUNDARY_ID: null,
-
-  assignSuspenseBoundaryID(): SuspenseInstance {
-    // The ID is a pointer to the boundary itself.
-    return {state: 'pending', children: []};
-  },
+  byteLengthOfChunk: null,
 
   getChildFormatContext(): null {
     return null;
   },
+  getSuspenseFallbackFormatContext(): null {
+    return null;
+  },
+  getSuspenseContentFormatContext(): null {
+    return null;
+  },
+
+  getViewTransitionFormatContext(): null {
+    return null;
+  },
+
+  resetResumableState(): void {},
+  completeResumableState(): void {},
 
   pushTextInstance(
     target: Array<Uint8Array>,
     text: string,
-    responseState: ResponseState,
+    renderState: RenderState,
     textEmbedded: boolean,
   ): boolean {
     const textInstance: TextInstance = {
@@ -116,7 +133,6 @@ const ReactNoopServer = ReactFizzServer({
   },
   pushStartInstance(
     target: Array<Uint8Array>,
-    preamble: Array<Uint8Array>,
     type: string,
     props: Object,
   ): ReactNodeList {
@@ -132,7 +148,6 @@ const ReactNoopServer = ReactFizzServer({
 
   pushEndInstance(
     target: Array<Uint8Array>,
-    postamble: Array<Uint8Array>,
     type: string,
     props: Object,
   ): void {
@@ -142,21 +157,23 @@ const ReactNoopServer = ReactFizzServer({
   // This is a noop in ReactNoop
   pushSegmentFinale(
     target: Array<Uint8Array>,
-    responseState: ResponseState,
+    renderState: RenderState,
     lastPushedText: boolean,
     textEmbedded: boolean,
   ): void {},
 
   writeCompletedRoot(
     destination: Destination,
-    responseState: ResponseState,
+    resumableState: ResumableState,
+    renderState: RenderState,
+    isComplete: boolean,
   ): boolean {
     return true;
   },
 
   writePlaceholder(
     destination: Destination,
-    responseState: ResponseState,
+    renderState: RenderState,
     id: number,
   ): boolean {
     const parent = destination.stack[destination.stack.length - 1];
@@ -166,49 +183,78 @@ const ReactNoopServer = ReactFizzServer({
     });
   },
 
+  pushStartActivityBoundary(
+    target: Array<Uint8Array>,
+    renderState: RenderState,
+  ): void {
+    const activityInstance: ActivityInstance = {
+      children: [],
+    };
+    target.push(Buffer.from(JSON.stringify(activityInstance), 'utf8'));
+  },
+
+  pushEndActivityBoundary(
+    target: Array<Uint8Array>,
+    renderState: RenderState,
+  ): void {
+    target.push(POP);
+  },
+
   writeStartCompletedSuspenseBoundary(
     destination: Destination,
-    responseState: ResponseState,
-    suspenseInstance: SuspenseInstance,
+    renderState: RenderState,
   ): boolean {
-    suspenseInstance.state = 'complete';
+    const suspenseInstance: SuspenseInstance = {
+      state: 'complete',
+      children: [],
+    };
     const parent = destination.stack[destination.stack.length - 1];
     parent.children.push(suspenseInstance);
     destination.stack.push(suspenseInstance);
+    return true;
   },
   writeStartPendingSuspenseBoundary(
     destination: Destination,
-    responseState: ResponseState,
-    suspenseInstance: SuspenseInstance,
+    renderState: RenderState,
   ): boolean {
-    suspenseInstance.state = 'pending';
+    const suspenseInstance: SuspenseInstance = {
+      state: 'pending',
+      children: [],
+    };
     const parent = destination.stack[destination.stack.length - 1];
     parent.children.push(suspenseInstance);
     destination.stack.push(suspenseInstance);
+    return true;
   },
   writeStartClientRenderedSuspenseBoundary(
     destination: Destination,
-    responseState: ResponseState,
-    suspenseInstance: SuspenseInstance,
+    renderState: RenderState,
   ): boolean {
-    suspenseInstance.state = 'client-render';
+    const suspenseInstance: SuspenseInstance = {
+      state: 'client-render',
+      children: [],
+    };
     const parent = destination.stack[destination.stack.length - 1];
     parent.children.push(suspenseInstance);
     destination.stack.push(suspenseInstance);
+    return true;
   },
   writeEndCompletedSuspenseBoundary(destination: Destination): boolean {
     destination.stack.pop();
+    return true;
   },
   writeEndPendingSuspenseBoundary(destination: Destination): boolean {
     destination.stack.pop();
+    return true;
   },
   writeEndClientRenderedSuspenseBoundary(destination: Destination): boolean {
     destination.stack.pop();
+    return true;
   },
 
   writeStartSegment(
     destination: Destination,
-    responseState: ResponseState,
+    renderState: RenderState,
     formatContext: null,
     id: number,
   ): boolean {
@@ -220,14 +266,16 @@ const ReactNoopServer = ReactFizzServer({
       throw new Error('Segments are only expected at the root of the stack.');
     }
     destination.stack.push(segment);
+    return true;
   },
   writeEndSegment(destination: Destination, formatContext: null): boolean {
     destination.stack.pop();
+    return true;
   },
 
   writeCompletedSegmentInstruction(
     destination: Destination,
-    responseState: ResponseState,
+    renderState: RenderState,
     contentSegmentID: number,
   ): boolean {
     const segment = destination.segments.get(contentSegmentID);
@@ -243,11 +291,12 @@ const ReactNoopServer = ReactFizzServer({
       0,
       ...segment.children,
     );
+    return true;
   },
 
   writeCompletedBoundaryInstruction(
     destination: Destination,
-    responseState: ResponseState,
+    renderState: RenderState,
     boundary: SuspenseInstance,
     contentSegmentID: number,
   ): boolean {
@@ -257,31 +306,44 @@ const ReactNoopServer = ReactFizzServer({
     }
     boundary.children = segment.children;
     boundary.state = 'complete';
+    return true;
   },
 
   writeClientRenderBoundaryInstruction(
     destination: Destination,
-    responseState: ResponseState,
+    renderState: RenderState,
     boundary: SuspenseInstance,
   ): boolean {
     boundary.status = 'client-render';
+    return true;
   },
 
-  writeInitialResources() {},
-  writeImmediateResources() {},
-
-  createResources(): Resources {
+  writePreambleStart() {},
+  writePreambleEnd() {},
+  writeHoistables() {},
+  writeHoistablesForBoundary() {},
+  writePostamble() {},
+  hoistHoistables(parent: HoistableState, child: HoistableState) {},
+  hasSuspenseyContent(hoistableState: HoistableState): boolean {
+    return false;
+  },
+  createHoistableState(): HoistableState {
     return null;
   },
-
-  createBoundaryResources(): BoundaryResources {
+  emitEarlyPreloads() {},
+  createPreambleState(): PreambleState {
     return null;
   },
-
-  setCurrentlyRenderingBoundaryResourcesTarget(resources: BoundaryResources) {},
-
-  prepareToRender() {},
-  cleanupAfterRender() {},
+  canHavePreamble() {
+    return false;
+  },
+  hoistPreambleState() {},
+  isPreambleReady() {
+    return true;
+  },
+  isPreambleContext() {
+    return false;
+  },
 });
 
 type Options = {
@@ -303,6 +365,7 @@ function render(children: React$Element<any>, options?: Options): Destination {
   };
   const request = ReactNoopServer.createRequest(
     children,
+    null,
     null,
     null,
     options ? options.progressiveChunkSize : undefined,

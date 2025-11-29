@@ -8,21 +8,43 @@
  */
 
 import type {ReactNodeList} from 'shared/ReactTypes';
-import type {BootstrapScriptDescriptor} from 'react-dom-bindings/src/server/ReactDOMServerFormatConfig';
+import type {
+  BootstrapScriptDescriptor,
+  HeadersDescriptor,
+} from 'react-dom-bindings/src/server/ReactFizzConfigDOM';
+import type {PostponedState, ErrorInfo} from 'react-server/src/ReactFizzServer';
+import type {ImportMap} from '../shared/ReactDOMTypes';
 
 import ReactVersion from 'shared/ReactVersion';
 
 import {
-  createRequest,
+  createPrerenderRequest,
+  resumeAndPrerenderRequest,
   startWork,
   startFlowing,
+  stopFlowing,
   abort,
+  getPostponedState,
 } from 'react-server/src/ReactFizzServer';
 
 import {
-  createResponseState,
+  createResumableState,
+  createRenderState,
+  resumeRenderState,
   createRootFormatContext,
-} from 'react-dom-bindings/src/server/ReactDOMServerFormatConfig';
+} from 'react-dom-bindings/src/server/ReactFizzConfigDOM';
+
+import {enableHalt} from 'shared/ReactFeatureFlags';
+
+import {ensureCorrectIsomorphicReactVersion} from '../shared/ensureCorrectIsomorphicReactVersion';
+ensureCorrectIsomorphicReactVersion();
+
+type NonceOption =
+  | string
+  | {
+      script?: string,
+      style?: string,
+    };
 
 type Options = {
   identifierPrefix?: string,
@@ -32,11 +54,15 @@ type Options = {
   bootstrapModules?: Array<string | BootstrapScriptDescriptor>,
   progressiveChunkSize?: number,
   signal?: AbortSignal,
-  onError?: (error: mixed) => ?string,
+  onError?: (error: mixed, errorInfo: ErrorInfo) => ?string,
   unstable_externalRuntimeSrc?: string | BootstrapScriptDescriptor,
+  importMap?: ImportMap,
+  onHeaders?: (headers: Headers) => void,
+  maxHeadersLength?: number,
 };
 
 type StaticResult = {
+  postponed: null | PostponedState,
   prelude: ReadableStream,
 };
 
@@ -54,25 +80,51 @@ function prerender(
           pull: (controller): ?Promise<void> => {
             startFlowing(request, controller);
           },
+          cancel: (reason): ?Promise<void> => {
+            stopFlowing(request);
+            abort(request, reason);
+          },
         },
-        // $FlowFixMe size() methods are not allowed on byte streams.
+        // $FlowFixMe[prop-missing] size() methods are not allowed on byte streams.
         {highWaterMark: 0},
       );
 
-      const result = {
-        prelude: stream,
-      };
+      const result: StaticResult = enableHalt
+        ? {
+            postponed: getPostponedState(request),
+            prelude: stream,
+          }
+        : ({
+            prelude: stream,
+          }: any);
       resolve(result);
     }
-    const request = createRequest(
+
+    const onHeaders = options ? options.onHeaders : undefined;
+    let onHeadersImpl;
+    if (onHeaders) {
+      onHeadersImpl = (headersDescriptor: HeadersDescriptor) => {
+        onHeaders(new Headers(headersDescriptor));
+      };
+    }
+
+    const resources = createResumableState(
+      options ? options.identifierPrefix : undefined,
+      options ? options.unstable_externalRuntimeSrc : undefined,
+      options ? options.bootstrapScriptContent : undefined,
+      options ? options.bootstrapScripts : undefined,
+      options ? options.bootstrapModules : undefined,
+    );
+    const request = createPrerenderRequest(
       children,
-      createResponseState(
-        options ? options.identifierPrefix : undefined,
-        undefined,
-        options ? options.bootstrapScriptContent : undefined,
-        options ? options.bootstrapScripts : undefined,
-        options ? options.bootstrapModules : undefined,
+      resources,
+      createRenderState(
+        resources,
+        undefined, // nonce is not compatible with prerendered bootstrap scripts
         options ? options.unstable_externalRuntimeSrc : undefined,
+        options ? options.importMap : undefined,
+        onHeadersImpl,
+        options ? options.maxHeadersLength : undefined,
       ),
       createRootFormatContext(options ? options.namespaceURI : undefined),
       options ? options.progressiveChunkSize : undefined,
@@ -98,4 +150,68 @@ function prerender(
   });
 }
 
-export {prerender, ReactVersion as version};
+type ResumeOptions = {
+  nonce?: NonceOption,
+  signal?: AbortSignal,
+  onError?: (error: mixed) => ?string,
+  unstable_externalRuntimeSrc?: string | BootstrapScriptDescriptor,
+};
+
+function resumeAndPrerender(
+  children: ReactNodeList,
+  postponedState: PostponedState,
+  options?: Omit<ResumeOptions, 'nonce'>,
+): Promise<StaticResult> {
+  return new Promise((resolve, reject) => {
+    const onFatalError = reject;
+
+    function onAllReady() {
+      const stream = new ReadableStream(
+        {
+          type: 'bytes',
+          pull: (controller): ?Promise<void> => {
+            startFlowing(request, controller);
+          },
+          cancel: (reason): ?Promise<void> => {
+            stopFlowing(request);
+            abort(request, reason);
+          },
+        },
+        // $FlowFixMe[prop-missing] size() methods are not allowed on byte streams.
+        {highWaterMark: 0},
+      );
+
+      const result = {
+        postponed: getPostponedState(request),
+        prelude: stream,
+      };
+      resolve(result);
+    }
+
+    const request = resumeAndPrerenderRequest(
+      children,
+      postponedState,
+      resumeRenderState(postponedState.resumableState, undefined),
+      options ? options.onError : undefined,
+      onAllReady,
+      undefined,
+      undefined,
+      onFatalError,
+    );
+    if (options && options.signal) {
+      const signal = options.signal;
+      if (signal.aborted) {
+        abort(request, (signal: any).reason);
+      } else {
+        const listener = () => {
+          abort(request, (signal: any).reason);
+          signal.removeEventListener('abort', listener);
+        };
+        signal.addEventListener('abort', listener);
+      }
+    }
+    startWork(request);
+  });
+}
+
+export {prerender, resumeAndPrerender, ReactVersion as version};

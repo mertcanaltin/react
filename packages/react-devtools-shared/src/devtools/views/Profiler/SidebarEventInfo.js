@@ -8,38 +8,55 @@
  */
 
 import type {SchedulingEvent} from 'react-devtools-timeline/src/types';
+import type {ReactFunctionLocation} from 'shared/ReactTypes';
 
 import * as React from 'react';
 import Button from '../Button';
 import ButtonIcon from '../ButtonIcon';
-import ViewSourceContext from '../Components/ViewSourceContext';
 import {useContext} from 'react';
 import {TimelineContext} from 'react-devtools-timeline/src/TimelineContext';
 import {
   formatTimestamp,
   getSchedulingEventLabel,
 } from 'react-devtools-timeline/src/utils/formatting';
-import {stackToComponentSources} from 'react-devtools-shared/src/devtools/utils';
+import {stackToComponentLocations} from 'react-devtools-shared/src/devtools/utils';
 import {copy} from 'clipboard-js';
+import {withPermissionsCheck} from 'react-devtools-shared/src/frontend/utils/withPermissionsCheck';
+import useOpenResource from '../useOpenResource';
 
 import styles from './SidebarEventInfo.css';
 
 export type Props = {};
+
+type FunctionLocationProps = {
+  location: ReactFunctionLocation,
+  displayName: string,
+};
+function FunctionLocation({location, displayName}: FunctionLocationProps) {
+  // TODO: We should support symbolication here as well, but
+  // symbolicating the whole stack can be expensive
+  const [canViewSource, viewSource] = useOpenResource(location, null);
+  return (
+    <li>
+      <Button
+        className={
+          canViewSource ? styles.ClickableSource : styles.UnclickableSource
+        }
+        disabled={!canViewSource}
+        onClick={viewSource}>
+        {displayName}
+      </Button>
+    </li>
+  );
+}
 
 type SchedulingEventProps = {
   eventInfo: SchedulingEvent,
 };
 
 function SchedulingEventInfo({eventInfo}: SchedulingEventProps) {
-  const {viewUrlSourceFunction} = useContext(ViewSourceContext);
   const {componentName, timestamp} = eventInfo;
   const componentStack = eventInfo.componentStack || null;
-
-  const viewSource = source => {
-    if (viewUrlSourceFunction != null && source != null) {
-      viewUrlSourceFunction(...source);
-    }
-  };
 
   return (
     <>
@@ -57,27 +74,35 @@ function SchedulingEventInfo({eventInfo}: SchedulingEventProps) {
               <div className={styles.Row}>
                 <label className={styles.Label}>Rendered by</label>
                 <Button
-                  onClick={() => copy(componentStack)}
+                  onClick={withPermissionsCheck(
+                    {permissions: ['clipboardWrite']},
+                    () => copy(componentStack),
+                  )}
                   title="Copy component stack to clipboard">
                   <ButtonIcon type="copy" />
                 </Button>
               </div>
               <ul className={styles.List}>
-                {stackToComponentSources(componentStack).map(
-                  ([displayName, source], index) => {
+                {stackToComponentLocations(componentStack).map(
+                  ([displayName, location], index) => {
+                    if (location == null) {
+                      return (
+                        <li key={index}>
+                          <Button
+                            className={styles.UnclickableSource}
+                            disabled={true}>
+                            {displayName}
+                          </Button>
+                        </li>
+                      );
+                    }
+
                     return (
-                      <li key={index}>
-                        <Button
-                          className={
-                            source
-                              ? styles.ClickableSource
-                              : styles.UnclickableSource
-                          }
-                          disabled={!source}
-                          onClick={() => viewSource(source)}>
-                          {displayName}
-                        </Button>
-                      </li>
+                      <FunctionLocation
+                        key={index}
+                        displayName={displayName}
+                        location={location}
+                      />
                     );
                   },
                 )}

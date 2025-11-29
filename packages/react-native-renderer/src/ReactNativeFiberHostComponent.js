@@ -7,16 +7,14 @@
  * @flow
  */
 
-import type {ElementRef} from 'react';
+import type {ViewConfig} from './ReactNativeTypes';
 import type {
-  HostComponent,
+  LegacyPublicInstance,
+  MeasureOnSuccessCallback,
   MeasureInWindowOnSuccessCallback,
   MeasureLayoutOnSuccessCallback,
-  MeasureOnSuccessCallback,
-  NativeMethods,
-  ViewConfig,
-} from './ReactNativeTypes';
-import type {Instance} from './ReactNativeHostConfig';
+} from 'react-native/Libraries/ReactPrivate/ReactNativePrivateInterface';
+import type {Instance} from './ReactFiberConfigNative';
 
 // Modules provided by RN:
 import {
@@ -30,7 +28,7 @@ import {
   warnForStyleProps,
 } from './NativeMethodsMixinUtils';
 
-class ReactNativeFiberHostComponent {
+class ReactNativeFiberHostComponent implements LegacyPublicInstance {
   _children: Array<Instance | number>;
   _nativeTag: number;
   _internalFiberInstanceHandleDEV: Object;
@@ -72,7 +70,7 @@ class ReactNativeFiberHostComponent {
   }
 
   measureLayout(
-    relativeToNativeNode: number | ElementRef<HostComponent<mixed>>,
+    relativeToNativeNode: number | LegacyPublicInstance,
     onSuccess: MeasureLayoutOnSuccessCallback,
     onFail?: () => void /* currently unused */,
   ) {
@@ -82,7 +80,8 @@ class ReactNativeFiberHostComponent {
       // Already a node handle
       relativeNode = relativeToNativeNode;
     } else {
-      const nativeNode: ReactNativeFiberHostComponent = (relativeToNativeNode: any);
+      const nativeNode: ReactNativeFiberHostComponent =
+        (relativeToNativeNode: any);
       if (nativeNode._nativeTag) {
         relativeNode = nativeNode._nativeTag;
       }
@@ -91,7 +90,7 @@ class ReactNativeFiberHostComponent {
     if (relativeNode == null) {
       if (__DEV__) {
         console.error(
-          'Warning: ref.measureLayout must be called with a node handle or a ref to a native component.',
+          'ref.measureLayout must be called with a node handle or a ref to a native component.',
         );
       }
 
@@ -125,10 +124,5 @@ class ReactNativeFiberHostComponent {
     }
   }
 }
-
-// eslint-disable-next-line no-unused-expressions
-// $FlowFixMe[class-object-subtyping] found when upgrading Flow
-// $FlowFixMe[method-unbinding] found when upgrading Flow
-(ReactNativeFiberHostComponent.prototype: $ReadOnly<{...NativeMethods, ...}>);
 
 export default ReactNativeFiberHostComponent;

@@ -31,6 +31,7 @@ import type {
 export type Context = {
   file: File | null,
   inMemoryTimelineData: Array<TimelineData> | null,
+  isPerformanceTracksSupported: boolean,
   isTimelineSupported: boolean,
   searchInputContainerRef: RefObject,
   setFile: (file: File | null) => void,
@@ -66,6 +67,18 @@ function TimelineContextController({children}: Props): React.Node {
     },
   );
 
+  const isPerformanceTracksSupported = useSyncExternalStore<boolean>(
+    function subscribe(callback) {
+      store.addListener('rootSupportsPerformanceTracks', callback);
+      return function unsubscribe() {
+        store.removeListener('rootSupportsPerformanceTracks', callback);
+      };
+    },
+    function getState() {
+      return store.rootSupportsPerformanceTracks;
+    },
+  );
+
   const inMemoryTimelineData = useSyncExternalStore<Array<TimelineData> | null>(
     function subscribe(callback) {
       store.profilerStore.addListener('isProcessingData', callback);
@@ -82,8 +95,10 @@ function TimelineContextController({children}: Props): React.Node {
 
   // Recreate view state any time new profiling data is imported.
   const viewState = useMemo<ViewState>(() => {
-    const horizontalScrollStateChangeCallbacks: Set<HorizontalScrollStateChangeCallback> = new Set();
-    const searchRegExpStateChangeCallbacks: Set<SearchRegExpStateChangeCallback> = new Set();
+    const horizontalScrollStateChangeCallbacks: Set<HorizontalScrollStateChangeCallback> =
+      new Set();
+    const searchRegExpStateChangeCallbacks: Set<SearchRegExpStateChangeCallback> =
+      new Set();
 
     const horizontalScrollState = {
       offset: 0,
@@ -133,6 +148,7 @@ function TimelineContextController({children}: Props): React.Node {
     () => ({
       file,
       inMemoryTimelineData,
+      isPerformanceTracksSupported,
       isTimelineSupported,
       searchInputContainerRef,
       setFile,
@@ -143,6 +159,7 @@ function TimelineContextController({children}: Props): React.Node {
     [
       file,
       inMemoryTimelineData,
+      isPerformanceTracksSupported,
       isTimelineSupported,
       setFile,
       viewState,

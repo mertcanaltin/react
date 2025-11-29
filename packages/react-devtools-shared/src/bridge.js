@@ -9,17 +9,16 @@
 
 import EventEmitter from './events';
 
-import type {ComponentFilter, Wall} from './types';
+import type {ComponentFilter, Wall} from './frontend/types';
 import type {
   InspectedElementPayload,
   OwnersList,
   ProfilingDataBackend,
   RendererID,
+  DevToolsHookSettings,
+  ProfilingSettings,
 } from 'react-devtools-shared/src/backend/types';
 import type {StyleAndLayout as StyleAndLayoutPayload} from 'react-devtools-shared/src/backend/NativeStyleEditor/types';
-import type {ConsolePatchSettings} from 'react-devtools-shared/src/backend/console';
-
-const BATCH_DURATION = 100;
 
 // This message specifies the version of the DevTools protocol currently supported by the backend,
 // as well as the earliest NPM version (e.g. "4.13.0") that protocol is supported by on the frontend.
@@ -28,7 +27,7 @@ export type BridgeProtocol = {
   // Version supported by the current frontend/backend.
   version: number,
 
-  // NPM version range that also supports this version.
+  // NPM version range of `react-devtools-inline` that also supports this version.
   // Note that 'maxNpmVersion' is only set when the version is bumped.
   minNpmVersion: string,
   maxNpmVersion: string | null,
@@ -80,12 +79,22 @@ type Message = {
   payload: any,
 };
 
-type HighlightElementInDOM = {
+type HighlightHostInstance = {
   ...ElementAndRendererID,
   displayName: string | null,
   hideAfterTimeout: boolean,
-  openNativeElementsPanel: boolean,
+  openBuiltinElementsPanel: boolean,
   scrollIntoView: boolean,
+};
+type HighlightHostInstances = {
+  elements: Array<ElementAndRendererID>,
+  displayName: string | null,
+  hideAfterTimeout: boolean,
+  scrollIntoView: boolean,
+};
+
+type ScrollToHostInstance = {
+  ...ElementAndRendererID,
 };
 
 type OverrideValue = {
@@ -135,6 +144,10 @@ type OverrideSuspense = {
   forceFallback: boolean,
 };
 
+type OverrideSuspenseMilestone = {
+  suspendedSet: Array<number>,
+};
+
 type CopyElementPathParams = {
   ...ElementAndRendererID,
   path: Array<string | number>,
@@ -150,6 +163,13 @@ type InspectElementParams = {
   forceFullData: boolean,
   path: Array<number | string> | null,
   requestID: number,
+};
+
+type InspectScreenParams = {
+  requestID: number,
+  id: number,
+  forceFullData: boolean,
+  path: Array<number | string> | null,
 };
 
 type StoreAsGlobalParams = {
@@ -172,76 +192,96 @@ type NativeStyleEditor_SetValueParams = {
 };
 
 type SavedPreferencesParams = {
-  appendComponentStack: boolean,
-  breakOnConsoleErrors: boolean,
   componentFilters: Array<ComponentFilter>,
-  showInlineWarningsAndErrors: boolean,
-  hideConsoleLogsInStrictMode: boolean,
 };
 
 export type BackendEvents = {
+  backendInitialized: [],
   backendVersion: [string],
   bridgeProtocol: [BridgeProtocol],
+  enableSuspenseTab: [],
   extensionBackendInitialized: [],
   fastRefreshScheduled: [],
   getSavedPreferences: [],
   inspectedElement: [InspectedElementPayload],
-  isBackendStorageAPISupported: [boolean],
-  isSynchronousXHRSupported: [boolean],
+  inspectedScreen: [InspectedElementPayload],
+  isReloadAndProfileSupportedByBackend: [boolean],
   operations: [Array<number>],
   ownersList: [OwnersList],
   overrideComponentFilters: [Array<ComponentFilter>],
+  environmentNames: [Array<string>],
   profilingData: [ProfilingDataBackend],
   profilingStatus: [boolean],
   reloadAppForProfiling: [],
-  selectFiber: [number],
+  saveToClipboard: [string],
+  selectElement: [number],
   shutdown: [],
-  stopInspectingNative: [boolean],
-  syncSelectionFromNativeElementsPanel: [],
-  syncSelectionToNativeElementsPanel: [],
-  unsupportedRendererVersion: [RendererID],
+  stopInspectingHost: [boolean],
+  scrollTo: [{left: number, top: number, right: number, bottom: number}],
+  syncSelectionToBuiltinElementsPanel: [],
+  unsupportedRendererVersion: [],
+
+  extensionComponentsPanelShown: [],
+  extensionComponentsPanelHidden: [],
+
+  resumeElementPolling: [],
+  pauseElementPolling: [],
 
   // React Native style editor plug-in.
   isNativeStyleEditorSupported: [
     {isSupported: boolean, validAttributes: ?$ReadOnlyArray<string>},
   ],
   NativeStyleEditor_styleAndLayout: [StyleAndLayoutPayload],
+
+  hookSettings: [$ReadOnly<DevToolsHookSettings>],
 };
+
+type StartProfilingParams = ProfilingSettings;
+type ReloadAndProfilingParams = ProfilingSettings;
 
 type FrontendEvents = {
   clearErrorsAndWarnings: [{rendererID: RendererID}],
-  clearErrorsForFiberID: [ElementAndRendererID],
-  clearNativeElementHighlight: [],
-  clearWarningsForFiberID: [ElementAndRendererID],
+  clearErrorsForElementID: [ElementAndRendererID],
+  clearHostInstanceHighlight: [],
+  clearWarningsForElementID: [ElementAndRendererID],
   copyElementPath: [CopyElementPathParams],
   deletePath: [DeletePath],
   getBackendVersion: [],
   getBridgeProtocol: [],
+  getIfHasUnsupportedRendererVersion: [],
   getOwnersList: [ElementAndRendererID],
   getProfilingData: [{rendererID: RendererID}],
   getProfilingStatus: [],
-  highlightNativeElement: [HighlightElementInDOM],
+  highlightHostInstance: [HighlightHostInstance],
+  highlightHostInstances: [HighlightHostInstances],
   inspectElement: [InspectElementParams],
+  inspectScreen: [InspectScreenParams],
   logElementToConsole: [ElementAndRendererID],
   overrideError: [OverrideError],
   overrideSuspense: [OverrideSuspense],
+  overrideSuspenseMilestone: [OverrideSuspenseMilestone],
   overrideValueAtPath: [OverrideValueAtPath],
   profilingData: [ProfilingDataBackend],
-  reloadAndProfile: [boolean],
+  reloadAndProfile: [ReloadAndProfilingParams],
   renamePath: [RenamePath],
   savedPreferences: [SavedPreferencesParams],
-  selectFiber: [number],
   setTraceUpdatesEnabled: [boolean],
   shutdown: [],
-  startInspectingNative: [],
-  startProfiling: [boolean],
-  stopInspectingNative: [boolean],
+  startInspectingHost: [boolean],
+  startProfiling: [StartProfilingParams],
+  stopInspectingHost: [],
+  scrollToHostInstance: [ScrollToHostInstance],
+  scrollTo: [{left: number, top: number, right: number, bottom: number}],
+  requestScrollPosition: [],
   stopProfiling: [],
   storeAsGlobal: [StoreAsGlobalParams],
   updateComponentFilters: [Array<ComponentFilter>],
-  updateConsolePatchSettings: [ConsolePatchSettings],
+  getEnvironmentNames: [],
+  updateHookSettings: [$ReadOnly<DevToolsHookSettings>],
   viewAttributeSource: [ViewAttributeSourceParams],
   viewElementSource: [ElementAndRendererID],
+
+  syncSelectionFromBuiltinElementsPanel: [],
 
   // React Native style editor plug-in.
   NativeStyleEditor_measure: [ElementAndRendererID],
@@ -262,18 +302,17 @@ type FrontendEvents = {
   overrideHookState: [OverrideHookState],
   overrideProps: [OverrideValue],
   overrideState: [OverrideValue],
+
+  getHookSettings: [],
 };
 
 class Bridge<
   OutgoingEvents: Object,
   IncomingEvents: Object,
-> extends EventEmitter<{
-  ...IncomingEvents,
-  ...OutgoingEvents,
-}> {
+> extends EventEmitter<IncomingEvents> {
   _isShutdown: boolean = false;
   _messageQueue: Array<any> = [];
-  _timeoutID: TimeoutID | null = null;
+  _scheduledFlush: boolean = false;
   _wall: Wall;
   _wallUnlisten: Function | null = null;
 
@@ -303,7 +342,7 @@ class Bridge<
 
   send<EventName: $Keys<OutgoingEvents>>(
     event: EventName,
-    ...payload: $ElementType<OutgoingEvents, EventName>
+    ...payload: OutgoingEvents[EventName]
   ) {
     if (this._isShutdown) {
       console.warn(
@@ -321,8 +360,19 @@ class Bridge<
     //   (or we're waiting for our setTimeout-0 to fire), then _timeoutID will
     //   be set, and we'll simply add to the queue and wait for that
     this._messageQueue.push(event, payload);
-    if (!this._timeoutID) {
-      this._timeoutID = setTimeout(this._flush, 0);
+    if (!this._scheduledFlush) {
+      this._scheduledFlush = true;
+      // $FlowFixMe
+      if (typeof devtoolsJestTestScheduler === 'function') {
+        // This exists just for our own jest tests.
+        // They're written in such a way that we can neither mock queueMicrotask
+        // because then we break React DOM and we can't not mock it because then
+        // we can't synchronously flush it. So they need to be rewritten.
+        // $FlowFixMe
+        devtoolsJestTestScheduler(this._flush); // eslint-disable-line no-undef
+      } else {
+        queueMicrotask(this._flush);
+      }
     }
   }
 
@@ -333,16 +383,17 @@ class Bridge<
     }
 
     // Queue the shutdown outgoing message for subscribers.
+    this.emit('shutdown');
     this.send('shutdown');
 
     // Mark this bridge as destroyed, i.e. disable its public API.
     this._isShutdown = true;
 
     // Disable the API inherited from EventEmitter that can add more listeners and send more messages.
-    // $FlowFixMe This property is not writable.
-    this.addListener = function() {};
-    // $FlowFixMe This property is not writable.
-    this.emit = function() {};
+    // $FlowFixMe[cannot-write] This property is not writable.
+    this.addListener = function () {};
+    // $FlowFixMe[cannot-write] This property is not writable.
+    this.emit = function () {};
     // NOTE: There's also EventEmitter API like `on` and `prependListener` that we didn't add to our Flow type of EventEmitter.
 
     // Unsubscribe this bridge incoming message listeners to be sure, and so they don't have to do that.
@@ -359,34 +410,24 @@ class Bridge<
     do {
       this._flush();
     } while (this._messageQueue.length);
-
-    // Make sure once again that there is no dangling timer.
-    if (this._timeoutID !== null) {
-      clearTimeout(this._timeoutID);
-      this._timeoutID = null;
-    }
   }
 
   _flush: () => void = () => {
     // This method is used after the bridge is marked as destroyed in shutdown sequence,
     // so we do not bail out if the bridge marked as destroyed.
     // It is a private method that the bridge ensures is only called at the right times.
-
-    if (this._timeoutID !== null) {
-      clearTimeout(this._timeoutID);
-      this._timeoutID = null;
-    }
-
-    if (this._messageQueue.length) {
-      for (let i = 0; i < this._messageQueue.length; i += 2) {
-        this._wall.send(this._messageQueue[i], ...this._messageQueue[i + 1]);
+    try {
+      if (this._messageQueue.length) {
+        for (let i = 0; i < this._messageQueue.length; i += 2) {
+          // This only supports one argument in practice but the types suggests it should support multiple.
+          this._wall.send(this._messageQueue[i], this._messageQueue[i + 1][0]);
+        }
+        this._messageQueue.length = 0;
       }
-      this._messageQueue.length = 0;
-
-      // Check again for queued messages in BATCH_DURATION ms. This will keep
-      // flushing in a loop as long as messages continue to be added. Once no
-      // more are, the timer expires.
-      this._timeoutID = setTimeout(this._flush, BATCH_DURATION);
+    } finally {
+      // We set this at the end in case new messages are added synchronously above.
+      // They're already handled so they shouldn't queue more flushes.
+      this._scheduledFlush = false;
     }
   };
 

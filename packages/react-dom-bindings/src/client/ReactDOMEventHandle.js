@@ -12,7 +12,7 @@ import type {ReactScopeInstance} from 'shared/ReactTypes';
 import type {
   ReactDOMEventHandle,
   ReactDOMEventHandleListener,
-} from '../shared/ReactDOMTypes';
+} from './ReactDOMEventHandleTypes';
 
 import {allNativeEvents} from '../events/EventRegistry';
 import {
@@ -21,13 +21,14 @@ import {
   doesTargetHaveEventHandle,
   addEventHandleToTarget,
 } from './ReactDOMComponentTree';
-import {ELEMENT_NODE} from '../shared/HTMLNodeType';
+import {ELEMENT_NODE} from './HTMLNodeType';
 import {listenToNativeEventForNonManagedEventTarget} from '../events/DOMPluginEventSystem';
 
 import {
   enableScopeAPI,
   enableCreateEventHandleAPI,
 } from 'shared/ReactFeatureFlags';
+import typeof {SyntheticEvent} from '../events/SyntheticEvent';
 
 type EventHandleOptions = {
   capture?: boolean,
@@ -44,7 +45,7 @@ function isReactScope(target: EventTarget | ReactScopeInstance): boolean {
 function createEventHandleListener(
   type: DOMEventName,
   isCapturePhaseListener: boolean,
-  callback: (SyntheticEvent<EventTarget>) => void,
+  callback: SyntheticEvent => void,
 ): ReactDOMEventHandleListener {
   return {
     callback,
@@ -109,9 +110,9 @@ export function createEventHandle(
       }
     }
 
-    const eventHandle = (
+    const eventHandle: ReactDOMEventHandle = (
       target: EventTarget | ReactScopeInstance,
-      callback: (SyntheticEvent<EventTarget>) => void,
+      callback: SyntheticEvent => void,
     ) => {
       if (typeof callback !== 'function') {
         throw new Error(

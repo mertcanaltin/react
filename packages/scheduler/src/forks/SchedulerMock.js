@@ -12,10 +12,7 @@
 
 import type {PriorityLevel} from '../SchedulerPriorities';
 
-import {
-  enableSchedulerDebugging,
-  enableProfiling,
-} from '../SchedulerFeatureFlags';
+import {enableProfiling} from '../SchedulerFeatureFlags';
 import {push, pop, peek} from '../SchedulerMinHeap';
 
 // TODO: Use symbols?
@@ -66,17 +63,14 @@ var LOW_PRIORITY_TIMEOUT = 10000;
 var IDLE_PRIORITY_TIMEOUT = maxSigned31BitInt;
 
 // Tasks are stored on a min heap
-var taskQueue = [];
+var taskQueue: Array<Task> = [];
 var timerQueue: Array<Task> = [];
 
 // Incrementing id counter. Used to maintain insertion order.
 var taskIdCounter = 1;
 
-// Pausing the scheduler is useful for debugging.
-var isSchedulerPaused = false;
-
 var currentTask = null;
-var currentPriorityLevel = NormalPriority;
+var currentPriorityLevel: PriorityLevel = NormalPriority;
 
 // This is set while performing work, to prevent re-entrance.
 var isPerformingWork = false;
@@ -195,10 +189,7 @@ function workLoop(hasTimeRemaining: boolean, initialTime: number): boolean {
   let currentTime = initialTime;
   advanceTimers(currentTime);
   currentTask = peek(taskQueue);
-  while (
-    currentTask !== null &&
-    !(enableSchedulerDebugging && isSchedulerPaused)
-  ) {
+  while (currentTask !== null) {
     if (
       currentTask.expirationTime > currentTime &&
       (!hasTimeRemaining || shouldYieldToHost())
@@ -295,7 +286,7 @@ function unstable_runWithPriority<T>(
 }
 
 function unstable_next<T>(eventHandler: () => T): T {
-  var priorityLevel;
+  var priorityLevel: PriorityLevel;
   switch (currentPriorityLevel) {
     case ImmediatePriority:
     case UserBlockingPriority:
@@ -322,7 +313,8 @@ function unstable_next<T>(eventHandler: () => T): T {
 function unstable_wrapCallback<T: (...Array<mixed>) => mixed>(callback: T): T {
   var parentPriorityLevel = currentPriorityLevel;
   // $FlowFixMe[incompatible-return]
-  return function() {
+  // $FlowFixMe[missing-this-annot]
+  return function () {
     // This is a fork of runWithPriority, inlined for performance.
     var previousPriorityLevel = currentPriorityLevel;
     currentPriorityLevel = parentPriorityLevel;
@@ -419,22 +411,6 @@ function unstable_scheduleCallback(
   }
 
   return newTask;
-}
-
-function unstable_pauseExecution() {
-  isSchedulerPaused = true;
-}
-
-function unstable_continueExecution() {
-  isSchedulerPaused = false;
-  if (!isHostCallbackScheduled && !isPerformingWork) {
-    isHostCallbackScheduled = true;
-    requestHostCallback(flushWork);
-  }
-}
-
-function unstable_getFirstCallbackNode(): Task | null {
-  return peek(taskQueue);
 }
 
 function unstable_cancelCallback(task: Task) {
@@ -605,7 +581,7 @@ function unstable_flushAllWithoutAsserting(): boolean {
   }
 }
 
-function unstable_clearYields(): Array<mixed> {
+function unstable_clearLog(): Array<mixed> {
   if (yieldedValues === null) {
     return [];
   }
@@ -631,7 +607,7 @@ function unstable_flushAll(): void {
   }
 }
 
-function unstable_yieldValue(value: mixed): void {
+function log(value: mixed): void {
   // eslint-disable-next-line react-internal/no-production-logging
   if (console.log.name === 'disabledLog' || disableYieldValue) {
     // If console.log has been patched, we assume we're in render
@@ -678,19 +654,16 @@ export {
   unstable_getCurrentPriorityLevel,
   shouldYieldToHost as unstable_shouldYield,
   requestPaint as unstable_requestPaint,
-  unstable_continueExecution,
-  unstable_pauseExecution,
-  unstable_getFirstCallbackNode,
   getCurrentTime as unstable_now,
   forceFrameRate as unstable_forceFrameRate,
   unstable_flushAllWithoutAsserting,
   unstable_flushNumberOfYields,
   unstable_flushExpired,
-  unstable_clearYields,
+  unstable_clearLog,
   unstable_flushUntilNextPaint,
   unstable_hasPendingWork,
   unstable_flushAll,
-  unstable_yieldValue,
+  log,
   unstable_advanceTime,
   reset,
   setDisableYieldValue as unstable_setDisableYieldValue,

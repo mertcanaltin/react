@@ -13,14 +13,14 @@ import * as React from 'react';
 import {createContext, useCallback, useContext, useEffect} from 'react';
 import {createResource} from '../../cache';
 import {BridgeContext, StoreContext} from '../context';
-import {TreeStateContext} from './TreeContext';
-import {separateDisplayNameAndHOCs} from 'react-devtools-shared/src/utils';
+import {TreeDispatcherContext, TreeStateContext} from './TreeContext';
+import {backendToFrontendSerializedElementMapper} from 'react-devtools-shared/src/utils';
 
 import type {OwnersList} from 'react-devtools-shared/src/backend/types';
 import type {
   Element,
   SerializedElement,
-} from 'react-devtools-shared/src/devtools/views/Components/types';
+} from 'react-devtools-shared/src/frontend/types';
 import type {Resource, Thenable} from '../../cache';
 
 type Context = (id: number) => Array<SerializedElement> | null;
@@ -45,7 +45,6 @@ const resource: Resource<
   (element: Element) => {
     const request = inProgressRequests.get(element);
     if (request != null) {
-      // $FlowFixMe[incompatible-call] found when upgrading Flow
       return request.promise;
     }
 
@@ -61,7 +60,7 @@ const resource: Resource<
     // $FlowFixMe[incompatible-call] found when upgrading Flow
     inProgressRequests.set(element, {promise, resolveFn});
 
-    return promise;
+    return (promise: $FlowFixMe);
   },
   (element: Element) => element,
   {useWeakMap: true},
@@ -70,6 +69,43 @@ const resource: Resource<
 type Props = {
   children: React$Node,
 };
+
+function useChangeOwnerAction(): (nextOwnerID: number) => void {
+  const bridge = useContext(BridgeContext);
+  const store = useContext(StoreContext);
+  const treeAction = useContext(TreeDispatcherContext);
+
+  return useCallback(
+    function changeOwnerAction(nextOwnerID: number) {
+      treeAction({type: 'SELECT_OWNER', payload: nextOwnerID});
+
+      const element = store.getElementByID(nextOwnerID);
+      if (element !== null) {
+        if (!inProgressRequests.has(element)) {
+          let resolveFn:
+            | ResolveFn
+            | ((
+                result:
+                  | Promise<Array<SerializedElement>>
+                  | Array<SerializedElement>,
+              ) => void) = ((null: any): ResolveFn);
+          const promise = new Promise(resolve => {
+            resolveFn = resolve;
+          });
+
+          // $FlowFixMe[incompatible-call] found when upgrading Flow
+          inProgressRequests.set(element, {promise, resolveFn});
+        }
+
+        const rendererID = store.getRendererIDForElement(nextOwnerID);
+        if (rendererID !== null) {
+          bridge.send('getOwnersList', {id: nextOwnerID, rendererID});
+        }
+      }
+    },
+    [bridge, store],
+  );
+}
 
 function OwnersListContextController({children}: Props): React.Node {
   const bridge = useContext(BridgeContext);
@@ -96,23 +132,10 @@ function OwnersListContextController({children}: Props): React.Node {
       if (element !== null) {
         const request = inProgressRequests.get(element);
         if (request != null) {
-          inProgressRequests.delete(element);
-
           request.resolveFn(
             ownersList.owners === null
               ? null
-              : ownersList.owners.map(owner => {
-                  const [
-                    displayNameWithoutHOCs,
-                    hocDisplayNames,
-                  ] = separateDisplayNameAndHOCs(owner.displayName, owner.type);
-
-                  return {
-                    ...owner,
-                    displayName: displayNameWithoutHOCs,
-                    hocDisplayNames,
-                  };
-                }),
+              : ownersList.owners.map(backendToFrontendSerializedElementMapper),
           );
         }
       }
@@ -141,4 +164,4 @@ function OwnersListContextController({children}: Props): React.Node {
   );
 }
 
-export {OwnersListContext, OwnersListContextController};
+export {OwnersListContext, OwnersListContextController, useChangeOwnerAction};

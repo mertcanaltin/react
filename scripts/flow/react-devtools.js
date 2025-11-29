@@ -7,12 +7,15 @@
  * @flow
  */
 
-declare var __EXTENSION__: boolean;
-declare var __TEST__: boolean;
+/* eslint-disable no-unused-vars */
 
-declare var DARK_MODE_DIMMED_WARNING_COLOR: string;
-declare var DARK_MODE_DIMMED_ERROR_COLOR: string;
-declare var DARK_MODE_DIMMED_LOG_COLOR: string;
-declare var LIGHT_MODE_DIMMED_WARNING_COLOR: string;
-declare var LIGHT_MODE_DIMMED_ERROR_COLOR: string;
-declare var LIGHT_MODE_DIMMED_LOG_COLOR: string;
+declare const __EXTENSION__: boolean;
+declare const __TEST__: boolean;
+
+declare const __IS_FIREFOX__: boolean;
+declare const __IS_CHROME__: boolean;
+declare const __IS_EDGE__: boolean;
+declare const __IS_NATIVE__: boolean;
+declare const __IS_INTERNAL_MCP_BUILD__: boolean;
+
+declare const chrome: any;

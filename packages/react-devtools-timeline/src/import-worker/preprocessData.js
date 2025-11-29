@@ -28,6 +28,7 @@ import type {
   TimelineData,
   SchedulingEvent,
   SuspenseEvent,
+  Snapshot,
 } from '../types';
 import {
   REACT_TOTAL_NUM_LANES,
@@ -123,7 +124,7 @@ function updateLaneToLabelMap(
 
 let profilerVersion = null;
 
-function getLastType(stack: $PropertyType<ProcessorState, 'measureStack'>) {
+function getLastType(stack: ProcessorState['measureStack']) {
   if (stack.length > 0) {
     const {type} = stack[stack.length - 1];
     return type;
@@ -131,7 +132,7 @@ function getLastType(stack: $PropertyType<ProcessorState, 'measureStack'>) {
   return null;
 }
 
-function getDepth(stack: $PropertyType<ProcessorState, 'measureStack'>) {
+function getDepth(stack: ProcessorState['measureStack']) {
   if (stack.length > 0) {
     const {depth, type} = stack[stack.length - 1];
     return type === 'render-idle' ? depth : depth + 1;
@@ -180,7 +181,7 @@ function markWorkCompleted(
   type: ReactMeasureType,
   stopTime: Milliseconds,
   currentProfilerData: TimelineData,
-  stack: $PropertyType<ProcessorState, 'measureStack'>,
+  stack: ProcessorState['measureStack'],
 ) {
   if (stack.length === 0) {
     console.error(
@@ -202,18 +203,19 @@ function markWorkCompleted(
     );
   }
 
+  // $FlowFixMe[incompatible-use]
   const {measure, startTime} = stack.pop();
   if (!measure) {
     console.error('Could not find matching measure for type "%s".', type);
   }
 
-  // $FlowFixMe This property should not be writable outside of this function.
+  // $FlowFixMe[cannot-write] This property should not be writable outside of this function.
   measure.duration = stopTime - startTime;
 }
 
 function throwIfIncomplete(
   type: ReactMeasureType,
-  stack: $PropertyType<ProcessorState, 'measureStack'>,
+  stack: ProcessorState['measureStack'],
 ) {
   const lastIndex = stack.length - 1;
   if (lastIndex >= 0) {
@@ -349,7 +351,7 @@ function processScreenshot(
 ) {
   const encodedSnapshot = event.args.snapshot; // Base 64 encoded
 
-  const snapshot = {
+  const snapshot: Snapshot = {
     height: 0,
     image: null,
     imageSource: `data:image/png;base64,${encodedSnapshot}`,
@@ -370,7 +372,7 @@ function processScreenshot(
   fetch(snapshot.imageSource)
     .then(response => response.blob())
     .then(blob => {
-      // $FlowFixMe createImageBitmap
+      // $FlowFixMe[cannot-resolve-name] createImageBitmap
       createImageBitmap(blob).then(bitmap => {
         snapshot.height = bitmap.height;
         snapshot.width = bitmap.width;
@@ -391,7 +393,7 @@ function processResourceSendRequest(
   const data = event.args.data;
   const requestId = data.requestId;
 
-  const availableDepths = new Array(
+  const availableDepths = new Array<boolean>(
     state.requestIdToNetworkMeasureMap.size + 1,
   ).fill(true);
   state.requestIdToNetworkMeasureMap.forEach(({depth}) => {
@@ -476,10 +478,10 @@ function processTimelineEvent(
       break;
     case 'blink.user_timing':
       if (name.startsWith('--react-version-')) {
-        const [reactVersion] = name.substr(16).split('-');
+        const [reactVersion] = name.slice(16).split('-');
         currentProfilerData.reactVersion = reactVersion;
       } else if (name.startsWith('--profiler-version-')) {
-        const [versionString] = name.substr(19).split('-');
+        const [versionString] = name.slice(19).split('-');
         profilerVersion = parseInt(versionString, 10);
         if (profilerVersion !== SCHEDULING_PROFILER_VERSION) {
           throw new InvalidProfileError(
@@ -487,7 +489,7 @@ function processTimelineEvent(
           );
         }
       } else if (name.startsWith('--react-lane-labels-')) {
-        const [laneLabelTuplesString] = name.substr(20).split('-');
+        const [laneLabelTuplesString] = name.slice(20).split('-');
         updateLaneToLabelMap(currentProfilerData, laneLabelTuplesString);
       } else if (name.startsWith('--component-')) {
         processReactComponentMeasure(
@@ -497,7 +499,7 @@ function processTimelineEvent(
           state,
         );
       } else if (name.startsWith('--schedule-render-')) {
-        const [laneBitmaskString] = name.substr(18).split('-');
+        const [laneBitmaskString] = name.slice(18).split('-');
 
         currentProfilerData.schedulingEvents.push({
           type: 'schedule-render',
@@ -506,9 +508,9 @@ function processTimelineEvent(
           warning: null,
         });
       } else if (name.startsWith('--schedule-forced-update-')) {
-        const [laneBitmaskString, componentName] = name.substr(25).split('-');
+        const [laneBitmaskString, componentName] = name.slice(25).split('-');
 
-        const forceUpdateEvent = {
+        const forceUpdateEvent: SchedulingEvent = {
           type: 'schedule-force-update',
           lanes: getLanesFromTransportDecimalBitmask(laneBitmaskString),
           componentName,
@@ -524,9 +526,9 @@ function processTimelineEvent(
 
         currentProfilerData.schedulingEvents.push(forceUpdateEvent);
       } else if (name.startsWith('--schedule-state-update-')) {
-        const [laneBitmaskString, componentName] = name.substr(24).split('-');
+        const [laneBitmaskString, componentName] = name.slice(24).split('-');
 
-        const stateUpdateEvent = {
+        const stateUpdateEvent: SchedulingEvent = {
           type: 'schedule-state-update',
           lanes: getLanesFromTransportDecimalBitmask(laneBitmaskString),
           componentName,
@@ -542,7 +544,7 @@ function processTimelineEvent(
 
         currentProfilerData.schedulingEvents.push(stateUpdateEvent);
       } else if (name.startsWith('--error-')) {
-        const [componentName, phase, message] = name.substr(8).split('-');
+        const [componentName, phase, message] = name.slice(8).split('-');
 
         currentProfilerData.thrownErrors.push({
           componentName,
@@ -552,16 +554,12 @@ function processTimelineEvent(
           type: 'thrown-error',
         });
       } else if (name.startsWith('--suspense-suspend-')) {
-        const [
-          id,
-          componentName,
-          phase,
-          laneBitmaskString,
-          promiseName,
-        ] = name.substr(19).split('-');
+        const [id, componentName, phase, laneBitmaskString, promiseName] = name
+          .slice(19)
+          .split('-');
         const lanes = getLanesFromTransportDecimalBitmask(laneBitmaskString);
 
-        const availableDepths = new Array(
+        const availableDepths = new Array<boolean>(
           state.unresolvedSuspenseEvents.size + 1,
         ).fill(true);
         state.unresolvedSuspenseEvents.forEach(({depth}) => {
@@ -581,7 +579,7 @@ function processTimelineEvent(
         // We can't know if they'll be resolved or not at this point.
         // We'll just give them a default (fake) duration width.
 
-        const suspenseEvent = {
+        const suspenseEvent: SuspenseEvent = {
           componentName,
           depth,
           duration: null,
@@ -608,7 +606,7 @@ function processTimelineEvent(
         currentProfilerData.suspenseEvents.push(suspenseEvent);
         state.unresolvedSuspenseEvents.set(id, suspenseEvent);
       } else if (name.startsWith('--suspense-resolved-')) {
-        const [id] = name.substr(20).split('-');
+        const [id] = name.slice(20).split('-');
         const suspenseEvent = state.unresolvedSuspenseEvents.get(id);
         if (suspenseEvent != null) {
           state.unresolvedSuspenseEvents.delete(id);
@@ -617,7 +615,7 @@ function processTimelineEvent(
           suspenseEvent.resolution = 'resolved';
         }
       } else if (name.startsWith('--suspense-rejected-')) {
-        const [id] = name.substr(20).split('-');
+        const [id] = name.slice(20).split('-');
         const suspenseEvent = state.unresolvedSuspenseEvents.get(id);
         if (suspenseEvent != null) {
           state.unresolvedSuspenseEvents.delete(id);
@@ -641,7 +639,7 @@ function processTimelineEvent(
           state.potentialLongNestedUpdate = null;
         }
 
-        const [laneBitmaskString] = name.substr(15).split('-');
+        const [laneBitmaskString] = name.slice(15).split('-');
 
         throwIfIncomplete('render', state.measureStack);
         if (getLastType(state.measureStack) !== 'render-idle') {
@@ -686,7 +684,7 @@ function processTimelineEvent(
         );
       } else if (name.startsWith('--commit-start-')) {
         state.nextRenderShouldGenerateNewBatchID = true;
-        const [laneBitmaskString] = name.substr(15).split('-');
+        const [laneBitmaskString] = name.slice(15).split('-');
 
         markWorkStarted(
           'commit',
@@ -709,7 +707,7 @@ function processTimelineEvent(
           state.measureStack,
         );
       } else if (name.startsWith('--layout-effects-start-')) {
-        const [laneBitmaskString] = name.substr(23).split('-');
+        const [laneBitmaskString] = name.slice(23).split('-');
 
         markWorkStarted(
           'layout-effects',
@@ -726,7 +724,7 @@ function processTimelineEvent(
           state.measureStack,
         );
       } else if (name.startsWith('--passive-effects-start-')) {
-        const [laneBitmaskString] = name.substr(24).split('-');
+        const [laneBitmaskString] = name.slice(24).split('-');
 
         markWorkStarted(
           'passive-effects',
@@ -743,7 +741,7 @@ function processTimelineEvent(
           state.measureStack,
         );
       } else if (name.startsWith('--react-internal-module-start-')) {
-        const stackFrameStart = name.substr(30);
+        const stackFrameStart = name.slice(30);
 
         if (!state.internalModuleStackStringSet.has(stackFrameStart)) {
           state.internalModuleStackStringSet.add(stackFrameStart);
@@ -753,7 +751,7 @@ function processTimelineEvent(
           state.internalModuleCurrentStackFrame = parsedStackFrameStart;
         }
       } else if (name.startsWith('--react-internal-module-stop-')) {
-        const stackFrameStop = name.substr(29);
+        const stackFrameStop = name.slice(29);
 
         if (!state.internalModuleStackStringSet.has(stackFrameStop)) {
           state.internalModuleStackStringSet.add(stackFrameStop);
@@ -837,7 +835,7 @@ function processReactComponentMeasure(
   state: ProcessorState,
 ): void {
   if (name.startsWith('--component-render-start-')) {
-    const [componentName] = name.substr(25).split('-');
+    const [componentName] = name.slice(25).split('-');
 
     assertNoOverlappingComponentMeasure(state);
 
@@ -860,7 +858,7 @@ function processReactComponentMeasure(
       currentProfilerData.componentMeasures.push(componentMeasure);
     }
   } else if (name.startsWith('--component-layout-effect-mount-start-')) {
-    const [componentName] = name.substr(38).split('-');
+    const [componentName] = name.slice(38).split('-');
 
     assertNoOverlappingComponentMeasure(state);
 
@@ -883,7 +881,7 @@ function processReactComponentMeasure(
       currentProfilerData.componentMeasures.push(componentMeasure);
     }
   } else if (name.startsWith('--component-layout-effect-unmount-start-')) {
-    const [componentName] = name.substr(40).split('-');
+    const [componentName] = name.slice(40).split('-');
 
     assertNoOverlappingComponentMeasure(state);
 
@@ -906,7 +904,7 @@ function processReactComponentMeasure(
       currentProfilerData.componentMeasures.push(componentMeasure);
     }
   } else if (name.startsWith('--component-passive-effect-mount-start-')) {
-    const [componentName] = name.substr(39).split('-');
+    const [componentName] = name.slice(39).split('-');
 
     assertNoOverlappingComponentMeasure(state);
 
@@ -929,7 +927,7 @@ function processReactComponentMeasure(
       currentProfilerData.componentMeasures.push(componentMeasure);
     }
   } else if (name.startsWith('--component-passive-effect-unmount-start-')) {
-    const [componentName] = name.substr(41).split('-');
+    const [componentName] = name.slice(41).split('-');
 
     assertNoOverlappingComponentMeasure(state);
 
@@ -978,14 +976,22 @@ function preprocessFlamechart(rawData: TimelineEvent[]): Flamechart {
   });
 
   const flamechart: Flamechart = speedscopeFlamechart.getLayers().map(layer =>
-    layer.map(({start, end, node: {frame: {name, file, line, col}}}) => ({
-      name,
-      timestamp: start / 1000,
-      duration: (end - start) / 1000,
-      scriptUrl: file,
-      locationLine: line,
-      locationColumn: col,
-    })),
+    layer.map(
+      ({
+        start,
+        end,
+        node: {
+          frame: {name, file, line, col},
+        },
+      }) => ({
+        name,
+        timestamp: start / 1000,
+        duration: (end - start) / 1000,
+        scriptUrl: file,
+        locationLine: line,
+        locationColumn: col,
+      }),
+    ),
   );
 
   return flamechart;
@@ -1005,7 +1011,7 @@ export default async function preprocessData(
 ): Promise<TimelineData> {
   const flamechart = preprocessFlamechart(timeline);
 
-  const laneToReactMeasureMap = new Map();
+  const laneToReactMeasureMap: Map<ReactLane, Array<ReactMeasure>> = new Map();
   for (let lane: ReactLane = 0; lane < REACT_TOTAL_NUM_LANES; lane++) {
     laneToReactMeasureMap.set(lane, []);
   }

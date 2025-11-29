@@ -14,15 +14,19 @@ import {
   ANIMATION_END,
   ANIMATION_ITERATION,
   ANIMATION_START,
+  TRANSITION_RUN,
+  TRANSITION_START,
+  TRANSITION_CANCEL,
   TRANSITION_END,
 } from './DOMEventNames';
 
-import {enableCreateEventHandleAPI} from 'shared/ReactFeatureFlags';
+import {
+  enableCreateEventHandleAPI,
+  enableScrollEndPolyfill,
+} from 'shared/ReactFeatureFlags';
 
-export const topLevelEventsToReactNames: Map<
-  DOMEventName,
-  string | null,
-> = new Map();
+export const topLevelEventsToReactNames: Map<DOMEventName, string | null> =
+  new Map();
 
 // NOTE: Capitalization is important in this list!
 //
@@ -36,6 +40,7 @@ export const topLevelEventsToReactNames: Map<
 const simpleEventPluginEvents = [
   'abort',
   'auxClick',
+  'beforeToggle',
   'cancel',
   'canPlay',
   'canPlayThrough',
@@ -104,6 +109,10 @@ const simpleEventPluginEvents = [
   'wheel',
 ];
 
+if (!enableScrollEndPolyfill) {
+  simpleEventPluginEvents.push('scrollEnd');
+}
+
 if (enableCreateEventHandleAPI) {
   // Special case: these two events don't have on* React handler
   // and are only accessible via the createEventHandle API.
@@ -111,7 +120,7 @@ if (enableCreateEventHandleAPI) {
   topLevelEventsToReactNames.set('afterblur', null);
 }
 
-function registerSimpleEvent(domEventName, reactName) {
+function registerSimpleEvent(domEventName: DOMEventName, reactName: string) {
   topLevelEventsToReactNames.set(domEventName, reactName);
   registerTwoPhaseEvent(reactName, [domEventName]);
 }
@@ -130,5 +139,9 @@ export function registerSimpleEvents() {
   registerSimpleEvent('dblclick', 'onDoubleClick');
   registerSimpleEvent('focusin', 'onFocus');
   registerSimpleEvent('focusout', 'onBlur');
+
+  registerSimpleEvent(TRANSITION_RUN, 'onTransitionRun');
+  registerSimpleEvent(TRANSITION_START, 'onTransitionStart');
+  registerSimpleEvent(TRANSITION_CANCEL, 'onTransitionCancel');
   registerSimpleEvent(TRANSITION_END, 'onTransitionEnd');
 }

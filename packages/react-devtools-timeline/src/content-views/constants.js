@@ -16,7 +16,7 @@ export const MARKER_TEXT_PADDING = 8;
 export const COLOR_HOVER_DIM_DELTA = 5;
 export const TOP_ROW_PADDING = 4;
 export const NATIVE_EVENT_HEIGHT = 14;
-export const SUSPENSE_EVENT_HEIGHT = 14;
+export const SUSPENSE_EVENT_HEIGHT: number = 14;
 export const PENDING_SUSPENSE_EVENT_SIZE = 8;
 export const REACT_EVENT_DIAMETER = 6;
 export const USER_TIMING_MARK_SIZE = 8;
@@ -27,18 +27,7 @@ export const TEXT_PADDING = 3;
 export const SNAPSHOT_SCRUBBER_SIZE = 3;
 
 export const INTERVAL_TIMES = [
-  1,
-  2,
-  5,
-  10,
-  20,
-  50,
-  100,
-  200,
-  500,
-  1000,
-  2000,
-  5000,
+  1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000,
 ];
 export const MIN_INTERVAL_SIZE_PX = 70;
 
